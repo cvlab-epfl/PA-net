@@ -1,7 +1,7 @@
 # PA-Net (MICCAI 2019)
 
-This is the code for the paper ** Probabilistic Atlases to Enforce Topological
-Constraints ** by Udaranga Wickramasinghe, Graham Knott, and Pascal Fua
+This is the code for the paper **Probabilistic Atlases to Enforce Topological
+Constraints** by Udaranga Wickramasinghe, Graham Knott, and Pascal Fua
 
 # Requirements
 
@@ -10,5 +10,4 @@ Constraints ** by Udaranga Wickramasinghe, Graham Knott, and Pascal Fua
 
 # Training
 
-# Evaluation 
-
+# Evaluation  
