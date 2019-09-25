@@ -2,7 +2,7 @@ from itertools import chain
 import torch.nn as nn
 import torch.nn.functional as F
 from utils.utils_common import crop, crop_and_merge
-from utils import stns, affine_3d_grid_generator
+from utils import transforms, affine_3d_grid_generator
 import torch
 
 
@@ -65,11 +65,9 @@ class PANet(nn.Module):
         self.up = nn.Sequential(*chain(*up_layers))
         self.final_layer = final_layer
 
+        feature_channel_count = config.config.pose_latent_feature_channel_count * 2 ** config.steps
+        self.fc_loc_laye1_size = feature_channel_count * config.config.pose_latent_feature_dim
 
-
-        feature_channel_count = 8 * 2 ** config.steps
-        self.fc_loc_laye1_size = feature_channel_count * 6 * 6 * 6
-        # self.fc_loc_laye1_size = feature_channel_count * 18 * 14 * 1
         self.localization = lambda x: x[:, :feature_channel_count]
 
 
@@ -78,7 +76,7 @@ class PANet(nn.Module):
                         nn.Linear(self.fc_loc_laye1_size // 16, self.fc_loc_laye1_size // 64),  nn.ReLU(True),
                         nn.Linear(self.fc_loc_laye1_size // 64, config.config.theta_param_count))
 
-        self.prior = config.config.priors.repeat(*([config.batch_size, 1] + [1 for _ in range(config.ndims)])).cuda()
+        self.prior = config.config.priors.cuda()
         self.upsample_mode = 'trilinear' if config.ndims == 3 else 'bilinear'
         self.center = tuple([i // 2 for i in self.prior.shape[2:]])
 
@@ -88,46 +86,39 @@ class PANet(nn.Module):
 
         # estimate parameters
         xs = self.localization(x_list[-1])
-        xs = xs.view(-1, self.fc_loc_laye1_size)
+        xs = xs.view(xs.shape[0], -1)
         params = self.fc_loc(xs)
 
         return params
 
 
-    def register_atlas(self, x, axis, size_out):
+    def register_atlas(self, atlas, pose, size_out):
 
 
-        theta_shift = torch.eye(4, 4)[None].repeat(axis.shape[0], 1, 1).cuda().float()
-        theta_shift[:, 0, 3] = axis[:, 3]
-        theta_shift[:, 1, 3] = axis[:, 4]
-        theta_shift[:, 2, 3] = axis[:, 5]
-
-        direction = torch.Tensor([0, -1, 0, 0]).cuda()[:3][None]
-        q = direction + axis[:, :3]
+        direction = torch.Tensor([0, -1, 0]).cuda()[None]
+        q = direction + pose[:, :3]
         q = F.normalize(q, dim=1)
+        theta_q = transforms.rot_matrix_from_quaternion(q)
 
-        theta_q = stns.stn_batch_quaternion_rotations(q)
 
-        # theta_scale = torch.eye(4, 4)[None].repeat(x.shape[0], 1, 1).cuda().float() * axis[:, 6] / 0.125
+        theta_shift = torch.eye(4, device=pose.device)[None].repeat(pose.shape[0], 1, 1).cuda().float()
+        theta_shift[:, :3, 3] = pose[:, 3:6]
+
+
+        # theta_scale = torch.eye(4, device=pose.device)[None].repeat(pose.shape[0], 1, 1).float() * axis[:, 6]
         # theta_scale[:, 3, 3] = 1
         # theta = theta_scale @ theta_q @ theta_shift
 
         theta = theta_q @ theta_shift
 
-        theta = theta[:, 0:3, :]
-        grid = affine_3d_grid_generator.affine_grid(theta, x.size()).double()
-        rotated = F.grid_sample(x.double(), grid, mode='bilinear', padding_mode='zeros').float().detach()
+        theta = theta[:, :3]
+        grid = affine_3d_grid_generator.affine_grid(theta, atlas.size()).double()
+        rotated = F.grid_sample(atlas.double(), grid, mode='bilinear', padding_mode='zeros').float().detach()
 
         _, _, D_out, H_out, W_out = size_out
-        N, C, D, H, W = rotated.shape
-        center = (D//2, H//2, W//2)
-        rotated = crop(rotated, (N, C, D_out, H_out, W_out) + (), (0, 2,) + center)
-        # crop_shape = tuple([N, x.shape[1], D_out, H_out, W_out])
-        # to_crop = tuple([False, False, True, True, True])
-        # center = tuple([s // 2 for s in rotated.shape])
-        #
-        # rotated = patch_utils.get_patch(rotated, crop_shape, center, mode='constant', copy=False, to_crop=to_crop).patch
-        # rotated = rotated.detach()
+        N_in, C_in, D_in, H_in, W_in = rotated.shape
+        center = (D_in//2, H_in//2, W_in//2)
+        rotated = crop(rotated, (N_in, C_in, D_out, H_out, W_out), (0, self.config.config.prior_channel_count//2,) + center)
 
         return rotated
 
@@ -147,34 +138,41 @@ class PANet(nn.Module):
             down_outputs.append(x)
 
         # pose estimation and atlas registration
+        prior = self.prior.repeat(*([input.shape[0], 1] + [1 for _ in range(self.config.ndims)]))
         pose = self.find_pose(down_outputs)
-        registered_atlas = self.register_atlas(self.prior, pose, input.shape)
+        registered_atlas = self.register_atlas(prior , pose, input.shape)
+
+        # Uncomment if the priors are registered based on pose of each structure separately
+        # In pose first n parameters corresponds to the pose of structure 1 and last n parameters corresponds to pose of structure 2
+        # registered_atlas_1 = self.register_atlas(self.prior[:, 0], axis[:, :n])
+        # registered_atlas_2 = self.register_atlas(self.prior[:, 1], axis[:, n:])
+        # registered_atlas = torch.cat((registered_atlas_1, registered_atlas_2), dim=1)
 
         # up layers
         for (upconv_layer, unet_layer), down_output in zip(self.up_layers, down_outputs[-2::-1]):
             x = upconv_layer(x)
             x = crop_and_merge(down_output, x)
-            x = crop_and_merge(F.upsample(registered_atlas, size=x.shape[2:], mode=self.upsample_mode), x) # mask
+            x = crop_and_merge(F.upsample(registered_atlas, size=x.shape[2:], mode=self.upsample_mode), x) # PAs
             x = unet_layer(x)
 
-        x = crop_and_merge(F.upsample(registered_atlas, size=x.shape[2:], mode=self.upsample_mode), x) # mask
+        x = crop_and_merge(F.upsample(registered_atlas, size=x.shape[2:], mode=self.upsample_mode), x) # PAs
         x = self.final_layer(x)
 
         return x, pose
 
 
-    def loss(self, x, y, weighsts):
+    def loss(self, input, target):
 
-        y_seg = y[0]
-        y_orient = y[1]
+        y_seg = target[0]
+        y_orient = target[1]
 
-        y_seg_hat, y_orient_hat = self.forward(x)
+        y_seg_hat, y_orient_hat = self.forward(input)
 
         CE_Loss = nn.CrossEntropyLoss()
-        MSE_Loss =   nn.MSELoss()
+        MSE_Loss = nn.MSELoss()
 
         ce_loss = CE_Loss(y_seg_hat,  y_seg)
-        mse_loss =   MSE_Loss(y_orient_hat, y_orient)
+        mse_loss = MSE_Loss(y_orient_hat, y_orient)
 
         loss = self.config.config.lamda_angle * mse_loss + self.config.config.lamda_ce * ce_loss
 

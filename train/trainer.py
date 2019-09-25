@@ -8,13 +8,12 @@ class Trainer(object):
 
     def training_step(self, data, epoch):
 
-
         # Get the minibatch
-        x, y_voxel, y_mesh = data
+        x, y = data
 
 
         self.optimizer.zero_grad()
-        loss, log = self.net.loss(x, y_voxel, y_mesh, epoch)
+        loss, log = self.net.loss(x, y)
         loss.backward()
         self.optimizer.step()
 
@@ -32,11 +31,11 @@ class Trainer(object):
         self.evaluator = evaluator
         self.log_msg = log_msg
 
-    def train(self, start_epoch):
+    def train(self):
         logger.info("Start training...")
         writer = SummaryWriter(self.save_path)
 
-        for epoch in range(start_epoch, start_epoch + self.numb_of_epochs):  # loop over the dataset multiple times
+        for epoch in range(self.numb_of_epochs):  # loop over the dataset multiple times
             running_loss = {}
             for data in self.trainloader:
                 # training step
@@ -54,9 +53,6 @@ class Trainer(object):
                 self.evaluator.evaluate(epoch, writer)
                 running_loss = 0.0
 
-        logger.info("... end training!")
+        logger.info("... end of training!")
 
 
-    # def eval(self, data):
-    #     x, y, w, angle = data
-    #     patch_o, axis_hat = self.net(x)

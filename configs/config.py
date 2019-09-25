@@ -1,6 +1,6 @@
-"""
-    DO NOT EDIT
-"""
+
+
+
 
 class Config(object):
     def __init__(self):
@@ -9,7 +9,6 @@ class Config(object):
         ''' Experiment '''
         self.experiment_idx = None
         self.trial_id = None
-        self.load_pre_trained = None
         self.train_mode = None
 
         ''' Save at '''
@@ -42,14 +41,22 @@ class Config(object):
 
         self.patch_shape = None
 
+        ''' Loss lambdas '''
+        self.lamda_ce = None
+        self.lamda_angle = None
+        self.pose_latent_feature_dim = None
+        self.pose_latent_feature_channel_count = None
+
+
+        ''' Priors '''
+        self.priors = None
 
     def set_trial_id(self, trial_id, train_mode=None):
         if trial_id is not None:
-            self.train_mode = train_mode #'eval'  # 'train'
+            self.train_mode = train_mode  # 'eval'  # 'train'
         else:
             self.train_mode = None
 
     def set_hint_patch_shape(self, value):
         self.hint_patch_shape = value
         self.ndims = len(value)
-

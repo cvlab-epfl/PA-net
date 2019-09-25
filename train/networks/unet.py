@@ -12,12 +12,11 @@ class UNetLayer(nn.Module):
         conv_op = nn.Conv2d if ndims == 2 else nn.Conv3d
         conv1 = conv_op(num_channels_in,  num_channels_out, kernel_size=3, padding=1)
         conv2 = conv_op(num_channels_out, num_channels_out, kernel_size=3, padding=1)
+        self.unet_layer = nn.Sequential(conv1, nn.ReLU() , conv2, nn.ReLU())
 
         # batch_nrom_op = nn.BatchNorm2d if ndims == 2 else nn.BatchNorm3d
         # bn1 = batch_nrom_op(num_channels_out)
         # bn2 = batch_nrom_op(num_channels_out)
-
-        self.unet_layer = nn.Sequential(conv1, nn.ReLU() , conv2, nn.ReLU())
         # self.unet_layer = nn.Sequential(conv1, bn1, nn.ReLU(), conv2, bn2, nn.ReLU())
 
     def forward(self, x):
@@ -84,14 +83,12 @@ class UNet(nn.Module):
         return pred
 
 
-    def loss(self, input, target, w, epoch):
+    def loss(self, input, target):
 
         pred = self.forward(input)
 
-        CE_Loss = nn.CrossEntropyLoss(reduction='none')
+        CE_Loss = nn.CrossEntropyLoss()
         loss = CE_Loss(pred,  target)
-        # loss = torch.mean(loss[w])
-        loss = torch.mean(loss)
 
         log = {"loss": loss.detach()}
 
