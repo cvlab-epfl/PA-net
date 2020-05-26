@@ -23,6 +23,10 @@ color hues denote the same areas as those in Fig. 1 (best viewed in color).
 1. Python 3.6 or later
 2. pytorch 1.0.0 or later  
 
+## Running experiments
+
+execute : ```python main.py```
+
 ## Contact
 For any questions regard this paper/code, please directly contact [Udaranga Wickramasinghe](mailto:udaranga.wickramasinghe@epfl.ch).
 
