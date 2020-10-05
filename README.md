@@ -25,7 +25,8 @@ color hues denote the same areas as those in Fig. 1 (best viewed in color).
 
 ## Running experiments
 
-execute : ```python main.py```
+First set up the data loaders.
+Then execute ```python train/main.py```
 
 ## Contact
 For any questions regard this paper/code, please directly contact [Udaranga Wickramasinghe](mailto:udaranga.wickramasinghe@epfl.ch).
